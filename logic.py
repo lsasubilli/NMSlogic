@@ -122,7 +122,6 @@ image_height = 370
 boxes_list1_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list1]
 boxes_list2_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list2]
 
-# Continue with the rest of the code, using boxes_list1_normalized and boxes_list2_normalized in place of boxes_list1 and boxes_list2
 print(boxes_list1_normalized)
 print(boxes_list2_normalized)
 
