@@ -1,13 +1,17 @@
+import os
 import cv2
 from google.colab.patches import cv2_imshow
+from ensemble_boxes import *
 
-# labels_list
-# car - 0
-# van - 1
-# cyclist - 2
-# pedestrian - 3
-# truck - 4
-# don't care - 5
+# Custom label names based on your `labels_list`
+custom_labels = {
+    0: "Car",
+    1: "Van",
+    2: "Cyclist",
+    3: "Pedestrian",
+    4: "Truck",
+    5: "Don't Care"
+}
 
 def read_boxes_from_file(filename):
     boxes_list = []
@@ -41,46 +45,6 @@ def normalize_coordinates(box, image_width, image_height):
     x1, y1, x2, y2 = box
     return [x1 / image_width, y1 / image_height, x2 / image_width, y2 / image_height]
 
-def iou(box1, box2):
-    # Calculate Intersection over Union (IoU) between two boxes
-    x1, y1, x2, y2 = box1
-    x3, y3, x4, y4 = box2
-
-    x_left = max(x1, x3)
-    y_top = max(y1, y3)
-    x_right = min(x2, x4)
-    y_bottom = min(y2, y4)
-
-    if x_right < x_left or y_bottom < y_top:
-        return 0.0
-
-    intersection_area = (x_right - x_left) * (y_bottom - y_top)
-    box1_area = (x2 - x1) * (y2 - y1)
-    box2_area = (x4 - x3) * (y4 - y3)
-
-    iou = intersection_area / float(box1_area + box2_area - intersection_area)
-    return iou
-
-def nms(boxes, scores, iou_threshold=0.3):
-    sorted_indices = sorted(range(len(scores)), key=lambda k: scores[k], reverse=True)
-    selected_indices = []
-
-    while len(sorted_indices) > 0:
-        best_index = sorted_indices[0]
-        selected_indices.append(best_index)
-
-        # Remove the selected box from the sorted list
-        sorted_indices = sorted_indices[1:]
-
-        for index in sorted_indices[:]:
-            if iou(boxes[best_index], boxes[index]) > iou_threshold:
-                sorted_indices.remove(index)
-
-    selected_boxes = [boxes[index] for index in selected_indices]
-    selected_scores = [scores[index] for index in selected_indices]
-
-    return selected_boxes, selected_scores
-
 # Define the function to draw bounding boxes and labels on the image
 def draw_boxes_with_labels(image, boxes, labels, scores, color=(252, 148, 3), thickness=2):
     for box, label, score in zip(boxes, labels, scores):
@@ -96,53 +60,81 @@ def draw_boxes_with_labels(image, boxes, labels, scores, color=(252, 148, 3), th
 
     return image
 
-filename1 = "/content/data/labels/Human_pred/Fixed/1.0/000002.txt"
-filename2 = "/content/drive/MyDrive/Datasets/YOLO/YOLONAS/Prediction/000002.txt"
-image = cv2.imread('/content/images/000002.png', cv2.IMREAD_COLOR)
+# Path to the folder containing images and their corresponding prediction files
+image_folder = "/content/SIP-2023---AAI07/data/images"
+human_prediction_folder = "/content/SIP-2023---AAI07/data/labels/Human_pred/Fixed/1.0"
+dataset_prediction_folder = "/content/drive/MyDrive/Datasets/YOLO/YOLONAS/Prediction"
 
-newImage = image.copy()
+# List all files in the human prediction folder
+prediction_files = os.listdir(human_prediction_folder)
 
-with open(filename1, 'r') as file:
-    gt_boxes = [[float(val) for val in line.strip().split()[2:6]] for line in file]
+# Initialize counters for accuracy and precision
+total_gt_boxes = 0
+true_positives = 0
+false_positives = 0
 
-with open(filename2, 'r') as file:
-    gt_boxes = [[float(val) for val in line.strip().split()[2:6]] for line in file]
+# Loop through each prediction file in the folder
+for prediction_file in prediction_files:
+    # Construct the paths to the image and prediction files
+    image_filename = prediction_file.split('.')[0] + '.png'
+    image_path = os.path.join(image_folder, image_filename)
+    human_prediction_path = os.path.join(human_prediction_folder, prediction_file)
+    dataset_prediction_path = os.path.join(dataset_prediction_folder, prediction_file)
 
-boxes_list1, scores_list1, labels_list1 = read_boxes_from_file(filename1)
-boxes_list2, scores_list2, labels_list2 = read_boxes_from_file(filename2)
+    # Read the image
+    image = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
-print(boxes_list1)
-print(boxes_list2)
+    # Read the bounding boxes and scores from the human prediction file
+    boxes_list1, scores_list1, labels_list1 = read_boxes_from_file(human_prediction_path)
 
-# KITTI image width and height
-image_width = 1224
-image_height = 370
+    # Check if a corresponding prediction file exists in the dataset folder
+    if os.path.exists(dataset_prediction_path):
+        # Read the bounding boxes and scores from the dataset prediction file
+        boxes_list2, scores_list2, labels_list2 = read_boxes_from_file(dataset_prediction_path)
+    else:
+        # If no corresponding prediction file found, use human prediction as fallback
+        boxes_list2, scores_list2, labels_list2 = boxes_list1, scores_list1, labels_list1
 
-# Normalize the bounding box coordinates
-boxes_list1_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list1]
-boxes_list2_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list2]
+    # KITTI image width and height
+    image_width = 1224
+    image_height = 370
 
-print(boxes_list1_normalized)
-print(boxes_list2_normalized)
+    #Normalize the bounding box coordinates
+    boxes_list1_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list1]
+    boxes_list2_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list2]
 
-iou_threshold = 0.3
+    # Apply Soft-NMS to merge overlapping boxes
+    fused_boxes, fused_scores, fused_labels = soft_nms(
+        [boxes_list1_normalized, boxes_list2_normalized],
+        [scores_list1, scores_list2],
+        [labels_list1, labels_list2],
+        iou_thr=0.3,
+        sigma=0.5,
+        thresh=0.1,
+        method='gaussian'
+    )
 
-# Apply NMS to merge overlapping boxes
-nms_boxes1, nms_scores1 = nms(boxes_list1_normalized, scores_list1, iou_threshold)
-nms_boxes2, nms_scores2 = nms(boxes_list2_normalized, scores_list2, iou_threshold)
+    #Update accuracy and precision counters
+    total_gt_boxes += len(boxes_list1)  # Assuming boxes_list1 contains ground truth boxes
+    true_positives += len(fused_boxes)
 
-# Initialize the image_with_boxes with a copy of the original image
-image_with_boxes = image.copy()
-# Printing the NMS results for the first set of boxes
-for box, score in zip(nms_boxes1, nms_scores1):
-    label_name = "Pedestrian"  # You can use the corresponding label based on your dataset
-    print(f"Label: {label_name}, Score: {score}, Box: {box}")
-    image_with_boxes = draw_boxes_with_labels(image_with_boxes, [box], [label_name], [score])  # Draw the box on the image_with_boxes
+    # Initialize the image_with_boxes with a copy of the original image
+    image_with_boxes = image.copy()
 
-# Printing the NMS results for the second set of boxes
-for box, score in zip(nms_boxes2, nms_scores2):
-    label_name = "Pedestrian"  # You can use the corresponding label based on your dataset
-    print(f"Label: {label_name}, Score: {score}, Box: {box}")
-    image_with_boxes = draw_boxes_with_labels(image_with_boxes, [box], [label_name], [score])  # Draw the box on the image_with_boxes
+    # Printing the fused results
+    for box, score, label in zip(fused_boxes, fused_scores, fused_labels):
+        label_name = custom_labels[label]
+        print(f"Label: {label_name}, Score: {score}, Box: {box}")
+        image_with_boxes = draw_boxes_with_labels(image_with_boxes, [box], [label_name], [score])  # Draw the fused box on the image_with_boxes
 
-cv2_imshow(image_with_boxes)  # Display the image with the fused bounding box and labels
+    cv2_imshow(image_with_boxes)  # Display the image with the fused bounding box and custom labels
+
+# Calculate accuracy and precision
+accuracy = true_positives / total_gt_boxes
+precision = true_positives / (true_positives + false_positives)
+
+print(f"Total Ground Truth Boxes: {total_gt_boxes}")
+print(f"True Positives: {true_positives}")
+print(f"False Positives: {false_positives}")
+print(f"Accuracy: {accuracy:.2f}")
+print(f"Precision: {precision:.2f}")
