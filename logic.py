@@ -99,7 +99,7 @@ for prediction_file in prediction_files:
     image_width = 1224
     image_height = 370
 
-    #Normalize the bounding box coordinates
+    # Normalize the bounding box coordinates
     boxes_list1_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list1]
     boxes_list2_normalized = [normalize_coordinates(box, image_width, image_height) for box in boxes_list2]
 
@@ -114,7 +114,7 @@ for prediction_file in prediction_files:
         method='gaussian'
     )
 
-    #Update accuracy and precision counters
+    # Update accuracy and precision counters
     total_gt_boxes += len(boxes_list1)  # Assuming boxes_list1 contains ground truth boxes
     true_positives += len(fused_boxes)
 
