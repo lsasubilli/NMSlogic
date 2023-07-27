@@ -96,7 +96,7 @@ def draw_boxes_with_labels(image, boxes, labels, scores, color=(252, 148, 3), th
 
     return image
 
-filename1 = "/content/SIP-2023---AAI07/data/labels/Human_pred/Fixed/1.0/000002.txt"
+filename1 = "/content/data/labels/Human_pred/Fixed/1.0/000002.txt"
 filename2 = "/content/drive/MyDrive/Datasets/YOLO/YOLONAS/Prediction/000002.txt"
 image = cv2.imread('/content/images/000002.png', cv2.IMREAD_COLOR)
 
